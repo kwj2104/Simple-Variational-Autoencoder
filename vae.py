@@ -101,32 +101,71 @@ class VAE():
         out = np.reshape(out, (self.batch_size, -1))
         
         #Calculate decoder gradients
-        dL = y * (1 / out)
-        dsig = dL * sigmoid(self.d_h1_l, derivative=True)
-        dsig_ = np.expand_dims(dsig, axis=-1)
+        #Left side term
+        dL_l = y * (1 / out)
+        dsig = sigmoid(self.d_h1_l, derivative=True)
+        dL_dsig_l = dL_l * dsig
+        
         drelu = relu(self.d_h0_l, derivative=True)
-        drelu_ = np.expand_dims(drelu, axis=1)
         
-        dW1_d = np.matmul(dsig_, drelu_)
-        db1_d = dsig
+        dW1_d_l = np.matmul(np.expand_dims(dL_dsig_l, axis=-1), np.expand_dims(drelu, axis=1))
+        db1_d_l = dL_dsig_l 
         
-        db0_d = dsig.dot(self.d_W1.T) * drelu
-        dW0_d = np.matmul(np.expand_dims(self.sample_z, axis=-1), np.expand_dims(db0_d, axis=1))
-        print(dW0_d.shape)
+        db0_d_l = dL_dsig_l.dot(self.d_W1.T) * drelu
+        dW0_d_l = np.matmul(np.expand_dims(self.sample_z, axis=-1), np.expand_dims(db0_d_l, axis=1))
         
-#        print(dsig.shape)
-#        print(self.d_W1.shape)
-#        print(drelu.shape)
-#        print(self.sample_z.shape)
+        #Right side term
+        dL_r = (1 - y) * (1 / (1 - out)) # Need to check
+        dL_dsig_r = dL_r * dsig
+        
+        dW1_d_r = np.matmul(np.expand_dims(dL_dsig_r, axis=-1), np.expand_dims(drelu, axis=1))
+        db1_d_r = dL_dsig_r
+        
+        db0_d_r = dL_dsig_r.dot(self.d_W1.T) * drelu
+        dW0_d_r = np.matmul(np.expand_dims(self.sample_z, axis=-1), np.expand_dims(db0_d_r, axis=1))
+        
+        # Combine gradients for decoder
+        grad_d_W0 = dW0_d_l + dW0_d_r
+        grad_d_b0 = db0_d_l + db0_d_r
+        grad_d_W1 = dW1_d_l + dW1_d_r
+        grad_d_b1 = db1_d_l + db1_d_r
+        
+        #Calculate encoder gradients from reconstruction
+        #Left side term
+        d_b_mu  = db0_d_l.dot(self.d_W0.T)
+        d_W_mu = np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(d_b_mu, axis=1))
+        
+        db0_e_l = d_b_mu.dot(self.e_W_mu.T) * lrelu(self.e_h0_l, derivative=True)
+        dW0_e_l = np.matmul(np.expand_dims(y, axis=-1), np.expand_dims(db0_e_l, axis=1)) 
+        
+        d_b_logvar = d_b_mu * np.exp(self.e_logvar * .5) * .5
+        d_W_logvar = np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(d_b_logvar, axis=1))
+        
+        db0_e_l_2 = d_b_logvar.dot(self.e_W_logvar.T) * lrelu(self.e_h0_l, derivative=True)
+        dW0_e_l_2 = np.matmul(np.expand_dims(y, axis=-1), np.expand_dims(db0_e_l_2, axis=1)) 
+        
+        #Right side term
+        #NEED TO FILL!!!
+        
+        
+        ########################################
+        #Calculate encoder gradients from K-L
+        ########################################
+        
+        #KL = sum(-.5 -.5l + .5m^2 +.5 e^l)
+        #-.5l term
+        dKL_W_log = -.5 * self.e_h0_a 
+        #+ 5 * np.exp(self.e_logvar) * self.e_h0_a
+        print(dKL_W_log.shape)
+        print(np.exp(self.e_logvar).shape)
+        print(self.e_h0_a.shape)
+        
+        
+        
         raise Exception()
+        
+        
 
-        
-        
-        
-        
-        ########################################
-        #Calculate gradients from K-L
-        ########################################
         
         # Update all weights
         for idx in range(self.batch_size):
