@@ -153,12 +153,11 @@ class VAE():
         ########################################
         
         #KL = sum(-.5 -.5l + .5m^2 +.5 e^l)
-        #-.5l term
-        dKL_W_log = -.5 * self.e_h0_a 
-        #+ 5 * np.exp(self.e_logvar) * self.e_h0_a
-        print(dKL_W_log.shape)
-        print(np.exp(self.e_logvar).shape)
-        print(self.e_h0_a.shape)
+        dKL_W_log = -.5 *(self.e_h0_a[..., None]  + np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(np.exp(self.e_logvar), axis=1)))  #64 x 400 x 20        
+        dKL_b_log = -.5 * (1 + np.exp(self.e_logvar))
+        
+        dlrelu = lrelu(self.e_h0_l, derivative=True)
+        #print(np.exp(self.e_logvar).shape)
         
         
         
