@@ -151,35 +151,22 @@ class VAE():
         ########################################
         #Calculate encoder gradients from K-L
         ########################################
-        
-        #KL = sum(-.5 -.5l + .5m^2 +.5 e^l)
-        dKL_W_log = -.5 *(self.e_h0_a[..., None]  - np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(np.exp(self.e_logvar), axis=1)))  #64 x 400 x 20        
-        
-        #recalculated with frobenius product
-        dKL_W_log_2 = .5 * (np.exp(self.e_logvar) - 1)
-        dKL_W_log_2 = np.matmul(np.expand_dims(self.e_h0_a, axis= -1), np.expand_dims(dKL_W_log_2, axis= 1))
-        print(dKL_W_log.shape)
-        print(dKL_W_log_2.shape)
-        print(np.array_equal(dKL_W_log, dKL_W_log_2))
-        raise Exception()
-        
+    
         dKL_b_log = -.5 * (1 - np.exp(self.e_logvar))
+        dKL_W_log = np.matmul(np.expand_dims(self.e_h0_a, axis= -1), np.expand_dims(dKL_b_log, axis= 1))
         
-        
-        dlrelu = lrelu(self.e_h0_l, derivative=True)
-#        dKL_e_W0 = np.matmul(np.expand_dims(dlrelu, axis=1), self.e_W_logvar)
-#        dKL_e_W0 = dKL_e_W0.T[..., None] * y[..., None]
-#        print(dKL_e_W0.shape)
-        
-        #print(np.exp(self.e_logvar).shape)
+        #Heaviside step function
+        dlrelu = lrelu(self.e_h0_l, derivative=True)        
+        dKL_e_b0 = dlrelu * np.exp(self.e_logvar - 1).dot(self.e_W_logvar.T)
+        dKL_e_W0 = np.matmul(np.expand_dims(y, axis= -1), np.expand_dims(dKL_e_b0, axis= 1))
         
         #m^2 term
-        dKL_W_m = -.5 * (2 * np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(self.e_mu, axis=1)))
-        dKL_b_m = -.5 * (2 * self.e_mu)
+        dKL_W_m = .5 * (2 * np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(self.e_mu, axis=1)))
+        dKL_b_m = .5 * (2 * self.e_mu)
         
         
         
-        raise Exception()
+
         
         
 
