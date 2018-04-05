@@ -108,7 +108,7 @@ class VAE():
         
         drelu = relu(self.d_h0_l, derivative=True)
         
-        dW1_d_l = np.matmul(np.expand_dims(dL_dsig_l, axis=-1), np.expand_dims(drelu, axis=1))
+        dW1_d_l = np.matmul(np.expand_dims(drelu, axis=-1), np.expand_dims(dL_dsig_l, axis=1))
         db1_d_l = dL_dsig_l 
         
         db0_d_l = dL_dsig_l.dot(self.d_W1.T) * drelu
@@ -118,7 +118,7 @@ class VAE():
         dL_r = (1 - y) * (1 / (1 - out)) # Need to check
         dL_dsig_r = dL_r * dsig
         
-        dW1_d_r = np.matmul(np.expand_dims(dL_dsig_r, axis=-1), np.expand_dims(drelu, axis=1))
+        dW1_d_r = np.matmul(np.expand_dims(drelu, axis=-1), np.expand_dims(dL_dsig_r, axis=1))
         db1_d_r = dL_dsig_r
         
         db0_d_r = dL_dsig_r.dot(self.d_W1.T) * drelu
@@ -132,64 +132,90 @@ class VAE():
         
         #Calculate encoder gradients from reconstruction
         #Left side term
-        d_b_mu  = db0_d_l.dot(self.d_W0.T)
-        d_W_mu = np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(d_b_mu, axis=1))
+        d_b_mu_l  = db0_d_l.dot(self.d_W0.T)
+        d_W_mu_l = np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(d_b_mu_l, axis=1))
         
-        db0_e_l = d_b_mu.dot(self.e_W_mu.T) * lrelu(self.e_h0_l, derivative=True)
+        db0_e_l = d_b_mu_l.dot(self.e_W_mu.T) * lrelu(self.e_h0_l, derivative=True)
         dW0_e_l = np.matmul(np.expand_dims(y, axis=-1), np.expand_dims(db0_e_l, axis=1)) 
         
-        d_b_logvar = d_b_mu * np.exp(self.e_logvar * .5) * .5
-        d_W_logvar = np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(d_b_logvar, axis=1))
+        d_b_logvar_l = d_b_mu_l * np.exp(self.e_logvar * .5) * .5
+        d_W_logvar_l = np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(d_b_logvar_l, axis=1))
         
-        db0_e_l_2 = d_b_logvar.dot(self.e_W_logvar.T) * lrelu(self.e_h0_l, derivative=True)
+        db0_e_l_2 = d_b_logvar_l.dot(self.e_W_logvar.T) * lrelu(self.e_h0_l, derivative=True)
         dW0_e_l_2 = np.matmul(np.expand_dims(y, axis=-1), np.expand_dims(db0_e_l_2, axis=1)) 
         
         #Right side term
-        #NEED TO FILL!!!
+        d_b_mu_r  = db0_d_r.dot(self.d_W0.T)
+        d_W_mu_r = np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(d_b_mu_r, axis=1))
         
+        db0_e_r = d_b_mu_r.dot(self.e_W_mu.T) * lrelu(self.e_h0_l, derivative=True)
+        dW0_e_r = np.matmul(np.expand_dims(y, axis=-1), np.expand_dims(db0_e_r, axis=1)) 
+        
+        d_b_logvar_r = d_b_mu_r * np.exp(self.e_logvar * .5) * .5
+        d_W_logvar_r = np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(d_b_logvar_r, axis=1))
+        
+        db0_e_r_2 = d_b_logvar_r.dot(self.e_W_logvar.T) * lrelu(self.e_h0_l, derivative=True)
+        dW0_e_r_2 = np.matmul(np.expand_dims(y, axis=-1), np.expand_dims(db0_e_r_2, axis=1)) 
         
         ########################################
         #Calculate encoder gradients from K-L
         ########################################
     
+        #logvar terms
         dKL_b_log = -.5 * (1 - np.exp(self.e_logvar))
         dKL_W_log = np.matmul(np.expand_dims(self.e_h0_a, axis= -1), np.expand_dims(dKL_b_log, axis= 1))
         
         #Heaviside step function
-        dlrelu = lrelu(self.e_h0_l, derivative=True)        
-        dKL_e_b0 = dlrelu * np.exp(self.e_logvar - 1).dot(self.e_W_logvar.T)
-        dKL_e_W0 = np.matmul(np.expand_dims(y, axis= -1), np.expand_dims(dKL_e_b0, axis= 1))
+        dlrelu = lrelu(self.e_h0_l, derivative=True)  
+        
+        dKL_e_b0_1 = dlrelu * np.exp(self.e_logvar - 1).dot(self.e_W_logvar.T)
+        dKL_e_W0_1 = np.matmul(np.expand_dims(y, axis= -1), np.expand_dims(dKL_e_b0_1, axis= 1))
         
         #m^2 term
         dKL_W_m = .5 * (2 * np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(self.e_mu, axis=1)))
         dKL_b_m = .5 * (2 * self.e_mu)
         
+        dKL_e_b0_2 = dlrelu * (2 * self.e_mu).dot(self.e_W_mu.T)
+        dKL_e_W0_2 = np.matmul(np.expand_dims(y, axis= -1), np.expand_dims(dKL_e_b0_2, axis= 1))
+        
+        # Combine gradients for encoder from recon and KL
+        grad_b_logvar = dKL_b_log + d_b_logvar_l + d_b_logvar_r
+        grad_W_logvar = dKL_W_log + d_W_logvar_l + d_W_logvar_r
+        grad_b_mu = dKL_b_m + d_b_mu_l + d_b_mu_r
+        grad_W_mu = dKL_W_m + d_W_mu_l + d_W_mu_r
+        grad_e_b0 = dKL_e_b0_1 + dKL_e_b0_2 + db0_e_l + db0_e_l_2 + db0_e_r + db0_e_r_2
+        grad_e_W0 = dKL_e_W0_1 + dKL_e_W0_2 + dW0_e_l + dW0_e_l_2 + dW0_e_r + dW0_e_r_2\
+        
+        print(grad_b_logvar)
+#        print(grad_W_logvar)
+#        print(grad_b_mu)
+#        print(grad_W_mu)
+#        print(grad_e_b0)
+#        print(grad_e_W0 )
+        
+        raise Exception()
         
         
-
-        
-        
-
         
         # Update all weights
         for idx in range(self.batch_size):
             # Encoder Weights
-#            self.e_W0 = self.e_W0 - self.learning_rate*grad_e_W0[idx]
-#            self.e_b0 = self.e_b0 - self.learning_rate*grad_e_b0[idx]
-#    
-#            self.e_W_mu = self.e_W_mu - self.learning_rate*grad_e_W_mu[idx]
-#            self.e_b_mu = self.e_b_mu - self.learning_rate*grad_e_b_mu[idx]
-#            
-#            self.e_W_logvar = self.e_W_logvar - self.learning_rate*grad_e_W_logvar[idx]
-#            self.e_b_logvar = self.e_b_logvar - self.learning_rate*grad_e_b_logvar[idx]
-#    
-#            # Decoder Weights
-#            self.d_W0 = self.d_W0 - self.learning_rate*grad_d_W0[idx]
-#            self.d_b0 = self.d_b0 - self.learning_rate*grad_d_b0[idx]
-#            
-#            self.d_W1 = self.d_W1 - self.learning_rate*grad_d_W1[idx]
-#            self.d_b1 = self.d_b1 - self.learning_rate*grad_d_b1[idx]
-            pass
+            self.e_W0 = self.e_W0 - self.learning_rate*grad_e_W0[idx]
+            self.e_b0 = self.e_b0 - self.learning_rate*grad_e_b0[idx]
+    
+            self.e_W_mu = self.e_W_mu - self.learning_rate*grad_W_mu[idx]
+            self.e_b_mu = self.e_b_mu - self.learning_rate*grad_b_mu[idx]
+            
+            self.e_W_logvar = self.e_W_logvar - self.learning_rate*grad_W_logvar[idx]
+            self.e_b_logvar = self.e_b_logvar - self.learning_rate*grad_b_logvar[idx]
+    
+            # Decoder Weights
+            self.d_W0 = self.d_W0 - self.learning_rate*grad_d_W0[idx]
+            self.d_b0 = self.d_b0 - self.learning_rate*grad_d_b0[idx]
+            
+            self.d_W1 = self.d_W1 - self.learning_rate*grad_d_W1[idx]
+            self.d_b1 = self.d_b1 - self.learning_rate*grad_d_b1[idx]
+
     
     def train(self):
         
@@ -239,20 +265,19 @@ class VAE():
                 # calculate gradient and update the weights using Adam
                 self.backward(train_batch, out)	
 
-
                #show res images as tile
                 #if you don't want to see the result at every step, comment line below
-                #img_tile(np.array(fake_img), self.img_path, epoch, idx, "res", False)
-                #self.img = fake_img
+                #img_tile(np.array(out), self.img_path, epoch, idx, "res", False)
+                self.img = out
 
-                #print("Epoch [%d] Step [%d] G Loss:%.4f D Loss:%.4f Real Ave.: %.4f Fake Ave.: %.4f lr: %.4f"%(
-                #        epoch, idx, np.mean(g_loss), np.mean(d_loss), np.mean(d_real_output), np.mean(d_fake_output), self.learning_rate))
+                print("Epoch [%d] Step [%d]  RC Loss:%.4f  KL Loss:%.4f  lr: %.4f"%(
+                        epoch, idx, rec_loss / self.batch_size, kl / self.batch_size, self.learning_rate))
                 
-                #update learning rate every epoch
-                #self.learning_rate = self.learning_rate * (1.0/(1.0 + self.decay*epoch))
+            #update learning rate every epoch
+            self.learning_rate = self.learning_rate * (1.0/(1.0 + self.decay*epoch))
                 
-                #save image result every epoch
-                #img_tile(np.array(self.img), self.img_path, epoch, idx, "res", True)
+            #save image result every epoch
+            img_tile(np.array(self.img), self.img_path, epoch, idx, "res", True)
 
 
 if __name__ == '__main__':
