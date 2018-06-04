@@ -16,6 +16,8 @@ def parse_args():
 
 args = parse_args()
 
+epsilon = 10e-8
+
 class VAE():
     def __init__(self, numbers):
         
@@ -184,17 +186,7 @@ class VAE():
         grad_b_mu = dKL_b_m + d_b_mu_l + d_b_mu_r
         grad_W_mu = dKL_W_m + d_W_mu_l + d_W_mu_r
         grad_e_b0 = dKL_e_b0_1 + dKL_e_b0_2 + db0_e_l + db0_e_l_2 + db0_e_r + db0_e_r_2
-        grad_e_W0 = dKL_e_W0_1 + dKL_e_W0_2 + dW0_e_l + dW0_e_l_2 + dW0_e_r + dW0_e_r_2\
-        
-        print(grad_b_logvar)
-#        print(grad_W_logvar)
-#        print(grad_b_mu)
-#        print(grad_W_mu)
-#        print(grad_e_b0)
-#        print(grad_e_W0 )
-        
-        raise Exception()
-        
+        grad_e_W0 = dKL_e_W0_1 + dKL_e_W0_2 + dW0_e_l + dW0_e_l_2 + dW0_e_r + dW0_e_r_2
         
         
         # Update all weights
