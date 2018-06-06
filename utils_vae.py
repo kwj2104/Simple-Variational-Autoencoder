@@ -119,6 +119,10 @@ def mnist_reader(numbers):
     #Training Data
     f = open('./data/train-images-idx3-ubyte')
     loaded = np.fromfile(file=f, dtype=np.uint8)
+    
+    #trainX = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32) / 255    
+    
+    #Old 
     trainX = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32) /  127.5 - 1
 
 

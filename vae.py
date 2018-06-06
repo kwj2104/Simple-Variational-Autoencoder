@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 import os
 from utils_vae import sigmoid, lrelu, tanh, img_tile, mnist_reader, relu, BCE_loss
+import torch
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -11,12 +12,13 @@ def parse_args():
     parser.add_argument("--layersize", type=int, default=400)
     parser.add_argument("--alpha", type=float, default=1)
     parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--bsize", type=int, default=64)
+    parser.add_argument("--bsize", type=int, default=1)
     return parser.parse_args()
 
 args = parse_args()
 
 epsilon = 10e-8
+np.random.seed(111)
 
 class VAE():
     def __init__(self, numbers):
@@ -37,24 +39,42 @@ class VAE():
         # Xavier initialization is used to initialize the weights
         # https://theneuralperspective.com/2016/11/11/weights-initialization/
         # init encoder weights
-        self.e_W0 = np.random.randn(784, self.layersize).astype(np.float32) * np.sqrt(2.0/(784))
+        #self.e_W0 = np.random.randn(784, self.layersize).astype(np.float32) * np.sqrt(2.0/(784))
         self.e_b0 = np.zeros(self.layersize).astype(np.float32)
 
-        self.e_W_mu = np.random.randn(self.layersize, self.nz).astype(np.float32) * np.sqrt(2.0/(self.layersize))
+        #self.e_W_mu = np.random.randn(self.layersize, self.nz).astype(np.float32) * np.sqrt(2.0/(self.layersize))
         self.e_b_mu = np.zeros(self.nz).astype(np.float32)
         
-        self.e_W_logvar = np.random.randn(self.layersize, self.nz).astype(np.float32) * np.sqrt(2.0/(self.layersize))
+        #self.e_W_logvar = np.random.randn(self.layersize, self.nz).astype(np.float32) * np.sqrt(2.0/(self.layersize))
         self.e_b_logvar = np.zeros(self.nz).astype(np.float32)
 
         # init decoder weights 
-        self.d_W0 = np.random.randn(self.nz, self.layersize).astype(np.float32) * np.sqrt(2.0/(self.nz))
+        #self.d_W0 = np.random.randn(self.nz, self.layersize).astype(np.float32) * np.sqrt(2.0/(self.nz))
         self.d_b0 = np.zeros(self.layersize).astype(np.float32)
         
-        self.d_W1 = np.random.randn(self.layersize, 784).astype(np.float32) * np.sqrt(2.0/(self.layersize))
+        #self.d_W1 = np.random.randn(self.layersize, 784).astype(np.float32) * np.sqrt(2.0/(self.layersize))
         self.d_b1 = np.zeros(784).astype(np.float32)
+        
+        #initialized test weights from pytorch x-inititalization
+        self.e_W0 = np.load('fc1_w.npy').T
+        self.e_W_mu = np.load('fc21_w.npy').T
+        self.e_W_logvar = np.load('fc22_w.npy').T    
+        self.d_W0 = np.load('fc3_w.npy').T
+        self.d_W1 = np.load('fc4_w.npy').T
+        
         
         # init sample
         self.sample_z = 0
+        self.rand_sample = 0
+        
+        # init adam optimizer
+                #Adam optimizer
+        self.b1 = .9
+        self.b2 = .999
+        self.e = 1e-8
+        self.m = [0] * 10
+        self.v = [0] * 10
+        self.t = 0
         
     def encoder(self, img):
         #self.e_logvar : log variance 
@@ -91,9 +111,14 @@ class VAE():
         mu, logvar = self.encoder(x)
         
         #use reparameterization trick to sample from gaussian
-        self.sample_z = mu + np.exp(logvar * .5) * np.random.standard_normal(size=(self.batch_size, self.nz))
+        #USE MANUAL SEEDING
+        #self.rand_sample = np.random.standard_normal(size=(self.batch_size, self.nz))
+        #self.sample_z = mu + np.exp(logvar * .5) * np.random.standard_normal(size=(self.batch_size, self.nz))
+        self.rand_sample = np.load('eps.npy')
+        self.sample_z = mu + np.exp(logvar * .5) * self.rand_sample
+        decode = self.decoder(self.sample_z)
         
-        return self.decoder(self.sample_z), mu, logvar
+        return decode, mu, logvar
     
     def backward(self, x, out):
         ########################################
@@ -104,13 +129,13 @@ class VAE():
         
         #Calculate decoder gradients
         #Left side term
-        dL_l = y * (1 / out)
+        dL_l = -y * (1 / out)
         dsig = sigmoid(self.d_h1_l, derivative=True)
         dL_dsig_l = dL_l * dsig
         
         drelu = relu(self.d_h0_l, derivative=True)
-        
-        dW1_d_l = np.matmul(np.expand_dims(drelu, axis=-1), np.expand_dims(dL_dsig_l, axis=1))
+
+        dW1_d_l = np.matmul(np.expand_dims(self.d_h0_a, axis=-1), np.expand_dims(dL_dsig_l, axis=1))
         db1_d_l = dL_dsig_l 
         
         db0_d_l = dL_dsig_l.dot(self.d_W1.T) * drelu
@@ -120,7 +145,7 @@ class VAE():
         dL_r = (1 - y) * (1 / (1 - out)) # Need to check
         dL_dsig_r = dL_r * dsig
         
-        dW1_d_r = np.matmul(np.expand_dims(drelu, axis=-1), np.expand_dims(dL_dsig_r, axis=1))
+        dW1_d_r = np.matmul(np.expand_dims(self.d_h0_a, axis=-1), np.expand_dims(dL_dsig_r, axis=1))
         db1_d_r = dL_dsig_r
         
         db0_d_r = dL_dsig_r.dot(self.d_W1.T) * drelu
@@ -131,7 +156,7 @@ class VAE():
         grad_d_b0 = db0_d_l + db0_d_r
         grad_d_W1 = dW1_d_l + dW1_d_r
         grad_d_b1 = db1_d_l + db1_d_r
-        
+         
         #Calculate encoder gradients from reconstruction
         #Left side term
         d_b_mu_l  = db0_d_l.dot(self.d_W0.T)
@@ -140,7 +165,7 @@ class VAE():
         db0_e_l = d_b_mu_l.dot(self.e_W_mu.T) * lrelu(self.e_h0_l, derivative=True)
         dW0_e_l = np.matmul(np.expand_dims(y, axis=-1), np.expand_dims(db0_e_l, axis=1)) 
         
-        d_b_logvar_l = d_b_mu_l * np.exp(self.e_logvar * .5) * .5
+        d_b_logvar_l = d_b_mu_l * np.exp(self.e_logvar * .5) * .5 * self.rand_sample
         d_W_logvar_l = np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(d_b_logvar_l, axis=1))
         
         db0_e_l_2 = d_b_logvar_l.dot(self.e_W_logvar.T) * lrelu(self.e_h0_l, derivative=True)
@@ -153,11 +178,11 @@ class VAE():
         db0_e_r = d_b_mu_r.dot(self.e_W_mu.T) * lrelu(self.e_h0_l, derivative=True)
         dW0_e_r = np.matmul(np.expand_dims(y, axis=-1), np.expand_dims(db0_e_r, axis=1)) 
         
-        d_b_logvar_r = d_b_mu_r * np.exp(self.e_logvar * .5) * .5
+        d_b_logvar_r = d_b_mu_r * np.exp(self.e_logvar * .5) * .5 * self.rand_sample
         d_W_logvar_r = np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(d_b_logvar_r, axis=1))
         
         db0_e_r_2 = d_b_logvar_r.dot(self.e_W_logvar.T) * lrelu(self.e_h0_l, derivative=True)
-        dW0_e_r_2 = np.matmul(np.expand_dims(y, axis=-1), np.expand_dims(db0_e_r_2, axis=1)) 
+        dW0_e_r_2 = np.matmul(np.expand_dims(y, axis=-1), np.expand_dims(db0_e_r_2, axis=1))
         
         ########################################
         #Calculate encoder gradients from K-L
@@ -169,15 +194,15 @@ class VAE():
         
         #Heaviside step function
         dlrelu = lrelu(self.e_h0_l, derivative=True)  
-        
-        dKL_e_b0_1 = dlrelu * np.exp(self.e_logvar - 1).dot(self.e_W_logvar.T)
+
+        dKL_e_b0_1 = .5 * dlrelu * (np.exp(self.e_logvar) - 1).dot(self.e_W_logvar.T)
         dKL_e_W0_1 = np.matmul(np.expand_dims(y, axis= -1), np.expand_dims(dKL_e_b0_1, axis= 1))
         
         #m^2 term
         dKL_W_m = .5 * (2 * np.matmul(np.expand_dims(self.e_h0_a, axis=-1), np.expand_dims(self.e_mu, axis=1)))
         dKL_b_m = .5 * (2 * self.e_mu)
         
-        dKL_e_b0_2 = dlrelu * (2 * self.e_mu).dot(self.e_W_mu.T)
+        dKL_e_b0_2 = .5 * dlrelu * (2 * self.e_mu).dot(self.e_W_mu.T)
         dKL_e_W0_2 = np.matmul(np.expand_dims(y, axis= -1), np.expand_dims(dKL_e_b0_2, axis= 1))
         
         # Combine gradients for encoder from recon and KL
@@ -189,31 +214,63 @@ class VAE():
         grad_e_W0 = dKL_e_W0_1 + dKL_e_W0_2 + dW0_e_l + dW0_e_l_2 + dW0_e_r + dW0_e_r_2
         
         
+        grad_list = [grad_e_W0, grad_e_b0, grad_W_mu, grad_b_mu, grad_W_logvar, grad_b_logvar,
+                     grad_d_W0, grad_d_b0, grad_d_W1, grad_d_b1]
+        
+        #Apply adam optimizer
+#        for i, grad in enumerate(grad_list):
+#            self.t += 1
+#            self.m[i] = self.b1 * self.m[i] + (1 - self.b1) * grad
+#            self.v[i] = self.b2 * self.v[i] + (1 - self.b2) * np.power(grad, 2)
+#            m_h = self.m[i] / (1 - (self.b1 ** self.t))
+#            v_h = self.v[i] / (1 - (self.b2 ** self.t))
+#            grad_list[i] = grad_list[i] * m_h / (v_h + self.e)
+        
+            
+        
         # Update all weights
         for idx in range(self.batch_size):
             # Encoder Weights
-            self.e_W0 = self.e_W0 - self.learning_rate*grad_e_W0[idx]
-            self.e_b0 = self.e_b0 - self.learning_rate*grad_e_b0[idx]
+            self.e_W0 = self.e_W0 - self.learning_rate*grad_list[0][idx]
+            self.e_b0 = self.e_b0 - self.learning_rate*grad_list[1][idx]
     
-            self.e_W_mu = self.e_W_mu - self.learning_rate*grad_W_mu[idx]
-            self.e_b_mu = self.e_b_mu - self.learning_rate*grad_b_mu[idx]
+            self.e_W_mu = self.e_W_mu - self.learning_rate*grad_list[2][idx]
+            self.e_b_mu = self.e_b_mu - self.learning_rate*grad_list[3][idx]
             
-            self.e_W_logvar = self.e_W_logvar - self.learning_rate*grad_W_logvar[idx]
-            self.e_b_logvar = self.e_b_logvar - self.learning_rate*grad_b_logvar[idx]
+            self.e_W_logvar = self.e_W_logvar - self.learning_rate*grad_list[4][idx]
+            self.e_b_logvar = self.e_b_logvar - self.learning_rate*grad_list[5][idx]
     
             # Decoder Weights
-            self.d_W0 = self.d_W0 - self.learning_rate*grad_d_W0[idx]
-            self.d_b0 = self.d_b0 - self.learning_rate*grad_d_b0[idx]
+            self.d_W0 = self.d_W0 - self.learning_rate*grad_list[6][idx]
+            self.d_b0 = self.d_b0 - self.learning_rate*grad_list[7][idx]
             
-            self.d_W1 = self.d_W1 - self.learning_rate*grad_d_W1[idx]
-            self.d_b1 = self.d_b1 - self.learning_rate*grad_d_b1[idx]
+            self.d_W1 = self.d_W1 - self.learning_rate*grad_list[8][idx]
+            self.d_b1 = self.d_b1 - self.learning_rate*grad_list[9][idx]
+#            # Encoder Weights
+#            self.e_W0 = self.e_W0 - self.learning_rate*grad_e_W0[idx]
+#            self.e_b0 = self.e_b0 - self.learning_rate*grad_e_b0[idx]
+#    
+#            self.e_W_mu = self.e_W_mu - self.learning_rate*grad_W_mu[idx]
+#            self.e_b_mu = self.e_b_mu - self.learning_rate*grad_b_mu[idx]
+#            
+#            self.e_W_logvar = self.e_W_logvar - self.learning_rate*grad_W_logvar[idx]
+#            self.e_b_logvar = self.e_b_logvar - self.learning_rate*grad_b_logvar[idx]
+#    
+#            # Decoder Weights
+#            self.d_W0 = self.d_W0 - self.learning_rate*grad_d_W0[idx]
+#            self.d_b0 = self.d_b0 - self.learning_rate*grad_d_b0[idx]
+#            
+#            self.d_W1 = self.d_W1 - self.learning_rate*grad_d_W1[idx]
+#            self.d_b1 = self.d_b1 - self.learning_rate*grad_d_b1[idx]
 
     
     def train(self):
         
         #Read in training data
         trainX, _, train_size = mnist_reader(self.numbers)
-        np.random.shuffle(trainX)
+        
+        #NEED TO UNCOMMENT
+        #np.random.shuffle(trainX)
         
         #set batch indices
         batch_idx = train_size//self.batch_size
@@ -222,6 +279,8 @@ class VAE():
         total_kl = 0
         total = 0
         
+        counter = 0
+        
         for epoch in range(self.epochs):
             for idx in range(batch_idx):
                 # prepare batch and input vector z
@@ -229,12 +288,16 @@ class VAE():
                 #ignore batch if there are insufficient elements 
                 if train_batch.shape[0] != self.batch_size:
                     break
+                #np.save('test_batch.npy', train_batch)
+                train_batch = np.load('test_batch.npy')
+
 
                 ################################
                 #		Forward Pass
                 ################################
                 
                 out, mu, logvar = self.forward(train_batch)
+
                 
                 # Reconstruction Loss
                 rec_loss = BCE_loss(out, train_batch)
@@ -264,6 +327,11 @@ class VAE():
 
                 print("Epoch [%d] Step [%d]  RC Loss:%.4f  KL Loss:%.4f  lr: %.4f"%(
                         epoch, idx, rec_loss / self.batch_size, kl / self.batch_size, self.learning_rate))
+                
+                #print(out)
+                if counter == 5:
+                    raise Exception()
+                counter += 1
                 
             #update learning rate every epoch
             self.learning_rate = self.learning_rate * (1.0/(1.0 + self.decay*epoch))
