@@ -1,49 +1,46 @@
-import numpy as np
-#import cv2
+import numpy as npy
 from PIL import Image
 
-#Loss Function
+try:
+    import cupy as np
+except ImportError:
+    import numpy as np
+
+#Binary Cross-Entropy Loss Function for Reconstruction Loss 
 epsilon = 10e-8
 def BCE_loss(x, y):
     loss = np.sum(-y * np.log(x + epsilon) - (1 - y) * np.log(1 - x + epsilon))
     return loss
-    
-    
 
-####################################
-#        Activation Functions
-####################################
-def sigmoid(input, derivative=False):
-    res = 1/(1+np.exp(-input))
+# Activation Functions
+def sigmoid(x, derivative=False):
+    res = 1/(1+np.exp(-x))
     if derivative:
         return res*(1-res)
     return res
 
-def relu(input, derivative=False):
-    res = input
+def relu(x, derivative=False):
+    res = x
     if derivative:
         return 1.0 * (res > 0)
     else:
-        return res * (res > 0)
-        # return np.maximum(input, 0, input) # ver. 2        
+        return res * (res > 0)   
     
-
-def lrelu(input, alpha=0.01, derivative=False):
-    res = input
+def lrelu(x, alpha=0.01, derivative=False):
+    res = x
     if derivative:
         dx = np.ones_like(res)
         dx[res < 0] = alpha
         return dx
     else:
-        return np.maximum(input, input*alpha, input)
+        return np.maximum(x, x*alpha, x)
 
-def tanh(input, derivative=False):
-    res = np.tanh(input)
+def tanh(x, derivative=False):
+    res = np.tanh(x)
     if derivative:
-        return 1.0 - np.tanh(input) ** 2
+        return 1.0 - np.tanh(x) ** 2
     return res
 
-##############################################################################
 
 def img_tile(imgs, path, epoch, step, name, save, aspect_ratio=1.0, tile_shape=None, border=1, border_color=0):
     if imgs.ndim != 3 and imgs.ndim != 4:
@@ -52,23 +49,23 @@ def img_tile(imgs, path, epoch, step, name, save, aspect_ratio=1.0, tile_shape=N
 
     tile_shape = None
     # Grid shape
-    img_shape = np.array(imgs.shape[1:3])
+    img_shape = npy.array(imgs.shape[1:3])
     if tile_shape is None:
         img_aspect_ratio = img_shape[1] / float(img_shape[0])
         aspect_ratio *= img_aspect_ratio
-        tile_height = int(np.ceil(np.sqrt(n_imgs * aspect_ratio)))
-        tile_width = int(np.ceil(np.sqrt(n_imgs / aspect_ratio)))
-        grid_shape = np.array((tile_height, tile_width))
+        tile_height = int(npy.ceil(npy.sqrt(n_imgs * aspect_ratio)))
+        tile_width = int(npy.ceil(npy.sqrt(n_imgs / aspect_ratio)))
+        grid_shape = npy.array((tile_height, tile_width))
     else:
         assert len(tile_shape) == 2
-        grid_shape = np.array(tile_shape)
+        grid_shape = npy.array(tile_shape)
 
     # Tile image shape
-    tile_img_shape = np.array(imgs.shape[1:])
+    tile_img_shape = npy.array(imgs.shape[1:])
     tile_img_shape[:2] = (img_shape[:2] + border) * grid_shape[:2] - border
 
     # Assemble tile image
-    tile_img = np.empty(tile_img_shape)
+    tile_img = npy.empty(tile_img_shape)
     tile_img[:] = border_color
     for i in range(grid_shape[0]):
         for j in range(grid_shape[1]):
@@ -84,26 +81,11 @@ def img_tile(imgs, path, epoch, step, name, save, aspect_ratio=1.0, tile_shape=N
             xoff = (img_shape[1] + border) * j
             tile_img[yoff:yoff+img_shape[0], xoff:xoff+img_shape[1], ...] = img 
 
+    path_name = path + "/iteration_%03d"%(epoch)+".jpg"
 
-    path_name = path + "/epoch_%03d"%(epoch)+".jpg"
-
-    ##########################################
-    # Change code below if you want to save results using PIL
-    ##########################################
-#    tile_img = cv2.resize(tile_img, (256,256))
-#    cv2.imshow(name, tile_img)
-#    cv2.waitKey(1)
-#    if save:    
-#        cv2.imwrite(path_name, tile_img*255)
-
-    img = Image.fromarray(np.uint8(tile_img * 255) , 'L')
-    img.show()
-
-    
-    
-    
-
-
+    img = Image.fromarray(npy.uint8(tile_img * 255) , 'L')
+    #img.show()
+    img.save(path_name)
 
 
 def mnist_reader(numbers):
@@ -115,19 +97,15 @@ def mnist_reader(numbers):
         
         return one_hot
 
-
     #Training Data
     f = open('./data/train-images-idx3-ubyte')
-    loaded = np.fromfile(file=f, dtype=np.uint8)
-    
-    #trainX = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32) / 255    
-    
-    #Old 
-    trainX = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32) /  127.5 - 1
+    loaded = npy.fromfile(file=f, dtype=np.uint8)
+
+    trainX = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32) / 255    
 
 
     f = open('./data/train-labels-idx1-ubyte')
-    loaded = np.fromfile(file=f, dtype=np.uint8)
+    loaded = npy.fromfile(file=f, dtype=np.uint8)
     trainY = loaded[8:].reshape((60000)).astype(np.int32)
 
     newtrainX = []
@@ -135,4 +113,4 @@ def mnist_reader(numbers):
         if trainY[idx] in numbers:
             newtrainX.append(trainX[idx])
 
-    return np.array(newtrainX), trainY, len(trainX) 
+    return np.array(newtrainX), trainY, len(newtrainX) 

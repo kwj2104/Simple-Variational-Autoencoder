@@ -1,23 +1,31 @@
 import argparse
-import numpy as np
+import numpy as npy
 import os
 from utils_vae import sigmoid, lrelu, tanh, img_tile, mnist_reader, relu, BCE_loss
-import torch
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--devid", type=int, default=-1)
     parser.add_argument("--epoch", type=int, default=40)
     parser.add_argument("--nz", type=int, default=20)
     parser.add_argument("--layersize", type=int, default=400)
     parser.add_argument("--alpha", type=float, default=1)
-    parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--bsize", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=0.0001)
+    parser.add_argument("--b1", type=float, default=0.9)
+    parser.add_argument("--b2", type=float, default=0.999)
+    parser.add_argument("--e", type=float, default=1e-8)
+    parser.add_argument("--bsize", type=int, default=64)
     return parser.parse_args()
 
 args = parse_args()
+cpu_enabled = 0
+try:
+    import cupy as np
+    cpu_enabled = 1
+except ImportError:
+    import numpy as np
+    print("CuPy not enabled on this machine")
+    
 
-epsilon = 10e-8
 np.random.seed(111)
 
 class VAE():
@@ -37,41 +45,31 @@ class VAE():
                 os.makedirs(self.img_path)
         
         # Xavier initialization is used to initialize the weights
-        # https://theneuralperspective.com/2016/11/11/weights-initialization/
         # init encoder weights
-        #self.e_W0 = np.random.randn(784, self.layersize).astype(np.float32) * np.sqrt(2.0/(784))
+        self.e_W0 = np.random.randn(784, self.layersize).astype(np.float32) * np.sqrt(2.0/(784))
         self.e_b0 = np.zeros(self.layersize).astype(np.float32)
 
-        #self.e_W_mu = np.random.randn(self.layersize, self.nz).astype(np.float32) * np.sqrt(2.0/(self.layersize))
+        self.e_W_mu = np.random.randn(self.layersize, self.nz).astype(np.float32) * np.sqrt(2.0/(self.layersize))
         self.e_b_mu = np.zeros(self.nz).astype(np.float32)
         
-        #self.e_W_logvar = np.random.randn(self.layersize, self.nz).astype(np.float32) * np.sqrt(2.0/(self.layersize))
+        self.e_W_logvar = np.random.randn(self.layersize, self.nz).astype(np.float32) * np.sqrt(2.0/(self.layersize))
         self.e_b_logvar = np.zeros(self.nz).astype(np.float32)
 
         # init decoder weights 
-        #self.d_W0 = np.random.randn(self.nz, self.layersize).astype(np.float32) * np.sqrt(2.0/(self.nz))
+        self.d_W0 = np.random.randn(self.nz, self.layersize).astype(np.float32) * np.sqrt(2.0/(self.nz))
         self.d_b0 = np.zeros(self.layersize).astype(np.float32)
         
-        #self.d_W1 = np.random.randn(self.layersize, 784).astype(np.float32) * np.sqrt(2.0/(self.layersize))
+        self.d_W1 = np.random.randn(self.layersize, 784).astype(np.float32) * np.sqrt(2.0/(self.layersize))
         self.d_b1 = np.zeros(784).astype(np.float32)
-        
-        #initialized test weights from pytorch x-inititalization
-        self.e_W0 = np.load('fc1_w.npy').T
-        self.e_W_mu = np.load('fc21_w.npy').T
-        self.e_W_logvar = np.load('fc22_w.npy').T    
-        self.d_W0 = np.load('fc3_w.npy').T
-        self.d_W1 = np.load('fc4_w.npy').T
-        
-        
+             
         # init sample
         self.sample_z = 0
         self.rand_sample = 0
         
-        # init adam optimizer
-                #Adam optimizer
-        self.b1 = .9
-        self.b2 = .999
-        self.e = 1e-8
+        # init Adam optimizer
+        self.b1 = args.b1
+        self.b2 = args.b2
+        self.e = args.e
         self.m = [0] * 10
         self.v = [0] * 10
         self.t = 0
@@ -93,7 +91,6 @@ class VAE():
     def decoder(self, z):
         #self.d_out : reconstruction image 28x28
 		
-        #probably not necessary
         self.z = np.reshape(z, (self.batch_size, self.nz))
         
         self.d_h0_l = self.z.dot(self.d_W0) + self.d_b0		
@@ -111,11 +108,9 @@ class VAE():
         mu, logvar = self.encoder(x)
         
         #use reparameterization trick to sample from gaussian
-        #USE MANUAL SEEDING
-        #self.rand_sample = np.random.standard_normal(size=(self.batch_size, self.nz))
-        #self.sample_z = mu + np.exp(logvar * .5) * np.random.standard_normal(size=(self.batch_size, self.nz))
-        self.rand_sample = np.load('eps.npy')
-        self.sample_z = mu + np.exp(logvar * .5) * self.rand_sample
+        self.rand_sample = np.random.standard_normal(size=(self.batch_size, self.nz))
+        self.sample_z = mu + np.exp(logvar * .5) * np.random.standard_normal(size=(self.batch_size, self.nz))
+        
         decode = self.decoder(self.sample_z)
         
         return decode, mu, logvar
@@ -142,7 +137,7 @@ class VAE():
         dW0_d_l = np.matmul(np.expand_dims(self.sample_z, axis=-1), np.expand_dims(db0_d_l, axis=1))
         
         #Right side term
-        dL_r = (1 - y) * (1 / (1 - out)) # Need to check
+        dL_r = (1 - y) * (1 / (1 - out))
         dL_dsig_r = dL_r * dsig
         
         dW1_d_r = np.matmul(np.expand_dims(self.d_h0_a, axis=-1), np.expand_dims(dL_dsig_r, axis=1))
@@ -217,16 +212,16 @@ class VAE():
         grad_list = [grad_e_W0, grad_e_b0, grad_W_mu, grad_b_mu, grad_W_logvar, grad_b_logvar,
                      grad_d_W0, grad_d_b0, grad_d_W1, grad_d_b1]
         
-        #Apply adam optimizer
-#        for i, grad in enumerate(grad_list):
-#            self.t += 1
-#            self.m[i] = self.b1 * self.m[i] + (1 - self.b1) * grad
-#            self.v[i] = self.b2 * self.v[i] + (1 - self.b2) * np.power(grad, 2)
-#            m_h = self.m[i] / (1 - (self.b1 ** self.t))
-#            v_h = self.v[i] / (1 - (self.b2 ** self.t))
-#            grad_list[i] = grad_list[i] * m_h / (v_h + self.e)
-        
-            
+        ########################################
+        #Calculate update using Adam
+        ########################################
+        self.t += 1
+        for i, grad in enumerate(grad_list):
+            self.m[i] = self.b1 * self.m[i] + (1 - self.b1) * grad
+            self.v[i] = self.b2 * self.v[i] + (1 - self.b2) * np.power(grad, 2)
+            m_h = self.m[i] / (1 - (self.b1 ** self.t))
+            v_h = self.v[i] / (1 - (self.b2 ** self.t))
+            grad_list[i] = m_h / (np.sqrt(v_h) + self.e)
         
         # Update all weights
         for idx in range(self.batch_size):
@@ -246,31 +241,13 @@ class VAE():
             
             self.d_W1 = self.d_W1 - self.learning_rate*grad_list[8][idx]
             self.d_b1 = self.d_b1 - self.learning_rate*grad_list[9][idx]
-#            # Encoder Weights
-#            self.e_W0 = self.e_W0 - self.learning_rate*grad_e_W0[idx]
-#            self.e_b0 = self.e_b0 - self.learning_rate*grad_e_b0[idx]
-#    
-#            self.e_W_mu = self.e_W_mu - self.learning_rate*grad_W_mu[idx]
-#            self.e_b_mu = self.e_b_mu - self.learning_rate*grad_b_mu[idx]
-#            
-#            self.e_W_logvar = self.e_W_logvar - self.learning_rate*grad_W_logvar[idx]
-#            self.e_b_logvar = self.e_b_logvar - self.learning_rate*grad_b_logvar[idx]
-#    
-#            # Decoder Weights
-#            self.d_W0 = self.d_W0 - self.learning_rate*grad_d_W0[idx]
-#            self.d_b0 = self.d_b0 - self.learning_rate*grad_d_b0[idx]
-#            
-#            self.d_W1 = self.d_W1 - self.learning_rate*grad_d_W1[idx]
-#            self.d_b1 = self.d_b1 - self.learning_rate*grad_d_b1[idx]
-
     
     def train(self):
         
         #Read in training data
         trainX, _, train_size = mnist_reader(self.numbers)
         
-        #NEED TO UNCOMMENT
-        #np.random.shuffle(trainX)
+        np.random.shuffle(trainX)
         
         #set batch indices
         batch_idx = train_size//self.batch_size
@@ -279,8 +256,6 @@ class VAE():
         total_kl = 0
         total = 0
         
-        counter = 0
-        
         for epoch in range(self.epochs):
             for idx in range(batch_idx):
                 # prepare batch and input vector z
@@ -288,16 +263,12 @@ class VAE():
                 #ignore batch if there are insufficient elements 
                 if train_batch.shape[0] != self.batch_size:
                     break
-                #np.save('test_batch.npy', train_batch)
-                train_batch = np.load('test_batch.npy')
-
-
+                
                 ################################
                 #		Forward Pass
                 ################################
                 
                 out, mu, logvar = self.forward(train_batch)
-
                 
                 # Reconstruction Loss
                 rec_loss = BCE_loss(out, train_batch)
@@ -320,29 +291,23 @@ class VAE():
                 # calculate gradient and update the weights using Adam
                 self.backward(train_batch, out)	
 
-               #show res images as tile
-                #if you don't want to see the result at every step, comment line below
-                #img_tile(np.array(out), self.img_path, epoch, idx, "res", False)
-                self.img = out
+                self.img = np.squeeze(out, axis=3) * 2 - 1
 
                 print("Epoch [%d] Step [%d]  RC Loss:%.4f  KL Loss:%.4f  lr: %.4f"%(
                         epoch, idx, rec_loss / self.batch_size, kl / self.batch_size, self.learning_rate))
                 
-                #print(out)
-                if counter == 5:
-                    raise Exception()
-                counter += 1
-                
-            #update learning rate every epoch
-            self.learning_rate = self.learning_rate * (1.0/(1.0 + self.decay*epoch))
-                
+            if cpu_enabled == 1:
+                sample = np.array(self.img)
+            else: 
+                sample = np.asnumpy(self.img)
+            
             #save image result every epoch
-            img_tile(np.array(self.img), self.img_path, epoch, idx, "res", True)
+            img_tile(sample, self.img_path, epoch, idx, "res", True)
 
 
 if __name__ == '__main__':
 
-    numbers = [1]
+    numbers = [1, 2, 3]
     model = VAE(numbers)
     model.train()
     
