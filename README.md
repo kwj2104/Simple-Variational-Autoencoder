@@ -9,7 +9,7 @@ Used preprocessing code and inspired by [@shinseung428](http://shinseung428.gith
 * Learns the MNIST Dataset
 * Xavier Initialization
 * Adam Optimizer
-\
+
 ### Requirements  
 * Numpy  
 * PIL (visualize results)
@@ -18,7 +18,7 @@ Used preprocessing code and inspired by [@shinseung428](http://shinseung428.gith
 ## Network  
 ![network](./images/NNLayers.png)
 
-## Results\
+## Results
 ![result](./images/iteration_030.jpg)
 
 
