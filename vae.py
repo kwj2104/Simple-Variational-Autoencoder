@@ -307,6 +307,8 @@ class VAE():
 
 if __name__ == '__main__':
 
+    # Adjust the numbers that appear in the training data. Less numbers helps 
+    # run the program to see faster results
     numbers = [1, 2, 3]
     model = VAE(numbers)
     model.train()
